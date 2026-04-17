@@ -13,3 +13,11 @@
 - Added a basic `/health` endpoint.
 - Ran both applications locally.
 
+## Day 3
+
+- Added local PostgreSQL with Docker Compose.
+- Added Prisma ORM to the API.
+- Created the initial database schema and first migration.
+- Connected the Express API to PostgreSQL.
+- Updated `/health` to confirm database connectivity.
+
