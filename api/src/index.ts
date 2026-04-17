@@ -2,6 +2,7 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import { prisma } from "./lib/prisma";
+import monitorsRouter from "./routes/monitors";
 
 const app = express();
 const port = 4000;
@@ -27,6 +28,8 @@ app.get("/health", async (_req, res) => {
     });
   }
 });
+
+app.use("/monitors", monitorsRouter);
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);

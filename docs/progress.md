@@ -21,3 +21,11 @@
 - Connected the Express API to PostgreSQL.
 - Updated `/health` to confirm database connectivity.
 
+## Day 4
+
+- Added the first monitor API routes.
+- Created `POST /monitors` to save monitors in PostgreSQL.
+- Created `GET /monitors` to list saved monitors.
+- Validated monitor input for name, URL, and interval.
+- Verified the health route reflects the monitor count.
+
