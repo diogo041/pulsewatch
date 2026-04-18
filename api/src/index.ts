@@ -5,7 +5,7 @@ import { prisma } from "./lib/prisma";
 import monitorsRouter from "./routes/monitors";
 
 const app = express();
-const port = 4000;
+const port = Number(process.env.PORT ?? 4001);
 
 app.use(cors());
 app.use(express.json());

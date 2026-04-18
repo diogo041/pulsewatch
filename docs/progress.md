@@ -29,3 +29,11 @@
 - Validated monitor input for name, URL, and interval.
 - Verified the health route reflects the monitor count.
 
+## Day 5
+
+- Replaced the default Next.js starter page with the PulseWatch dashboard.
+- Connected the frontend to the monitor API.
+- Displayed saved monitors from PostgreSQL in the browser.
+- Added the first frontend form to create monitors.
+- Resolved a local port conflict by moving the API to port 4001.
+- Verified monitor creation works end-to-end from UI to database.
