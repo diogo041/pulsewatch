@@ -2,6 +2,15 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+type CheckResult = {
+  id: string;
+  status: "UP" | "DOWN";
+  statusCode: number | null;
+  responseTimeMs: number | null;
+  errorMessage: string | null;
+  checkedAt: string;
+};
+
 type Monitor = {
   id: string;
   name: string;
@@ -10,6 +19,7 @@ type Monitor = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  checkResults: CheckResult[];
 };
 
 const API_BASE_URL =
@@ -23,6 +33,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pendingMonitorId, setPendingMonitorId] = useState<string | null>(null);
+  const [runningCheckId, setRunningCheckId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const activeMonitorCount = monitors.filter((monitor) => monitor.isActive).length;
@@ -161,6 +172,38 @@ export default function HomePage() {
     }
   }
 
+  async function handleRunCheck(id: string) {
+    try {
+      setRunningCheckId(id);
+      setError("");
+
+      const response = await fetch(`${API_BASE_URL}/monitors/${id}/run`, {
+        method: "POST"
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error ?? "Failed to run check");
+      }
+
+      const newCheckResult: CheckResult = await response.json();
+
+      setMonitors((current) =>
+        current.map((monitor) =>
+          monitor.id === id
+            ? { ...monitor, checkResults: [newCheckResult] }
+            : monitor
+        )
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong while running the check"
+      );
+    } finally {
+      setRunningCheckId(null);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f5f7ff,_#eef2ff_40%,_#ffffff_75%)] px-6 py-10 text-slate-900">
       <div className="mx-auto max-w-6xl">
@@ -174,8 +217,8 @@ export default function HomePage() {
                 Monitor your endpoints from one clean dashboard.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600">
-                Create monitors, pause them when needed, and keep your dashboard
-                clean as the product grows.
+                Create monitors, run live checks, and see the latest result directly
+                from the dashboard.
               </p>
             </div>
           </div>
@@ -203,8 +246,8 @@ export default function HomePage() {
             <div className="mb-6">
               <h2 className="text-2xl font-semibold">Add a monitor</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Start with one URL and a simple interval. You can now pause or
-                delete monitors directly from the dashboard.
+                Start with one URL and a simple interval. You can now run checks
+                and store the latest result.
               </p>
             </div>
 
@@ -278,7 +321,7 @@ export default function HomePage() {
               <div>
                 <h2 className="text-2xl font-semibold">Saved monitors</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Pause what you don’t want to check and delete what you no longer need.
+                  Run checks on demand and see the latest response right in the card.
                 </p>
               </div>
 
@@ -303,6 +346,8 @@ export default function HomePage() {
               <div className="space-y-4">
                 {monitors.map((monitor) => {
                   const isPending = pendingMonitorId === monitor.id;
+                  const isRunningCheck = runningCheckId === monitor.id;
+                  const latestCheck = monitor.checkResults[0];
 
                   return (
                     <article
@@ -339,7 +384,46 @@ export default function HomePage() {
                         </span>
                       </div>
 
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                        {latestCheck ? (
+                          <div className="space-y-1">
+                            <div className="font-medium text-slate-900">
+                              Last check:{" "}
+                              <span
+                                className={
+                                  latestCheck.status === "UP"
+                                    ? "text-emerald-700"
+                                    : "text-rose-700"
+                                }
+                              >
+                                {latestCheck.status}
+                              </span>
+                            </div>
+                            <div>
+                              {latestCheck.statusCode
+                                ? `HTTP ${latestCheck.statusCode}`
+                                : latestCheck.errorMessage ?? "No status code"}
+                              {" · "}
+                              {latestCheck.responseTimeMs ?? "N/A"} ms
+                              {" · "}
+                              {new Date(latestCheck.checkedAt).toLocaleString()}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>No checks recorded yet. Run the first one now.</div>
+                        )}
+                      </div>
+
                       <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={isRunningCheck}
+                          onClick={() => handleRunCheck(monitor.id)}
+                          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isRunningCheck ? "Running check..." : "Run check"}
+                        </button>
+
                         <button
                           type="button"
                           disabled={isPending}

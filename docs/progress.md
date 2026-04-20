@@ -45,3 +45,11 @@
 - Added pause/resume and delete actions to the dashboard.
 - Updated dashboard stats to reflect active monitors.
 - Verified monitor state changes and deletion work end-to-end.
+
+## Day 7
+
+- Added API support to run a monitor check on demand.
+- Stored check results in PostgreSQL using the existing `CheckResult` model.
+- Returned the latest check result with monitor list responses.
+- Added a Run Check action to the dashboard.
+- Displayed the latest check status, code, response time, and timestamp in the UI.
