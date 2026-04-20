@@ -37,3 +37,11 @@
 - Added the first frontend form to create monitors.
 - Resolved a local port conflict by moving the API to port 4001.
 - Verified monitor creation works end-to-end from UI to database.
+
+## Day 6
+
+- Added monitor pause and resume support to the API.
+- Added monitor delete support to the API.
+- Added pause/resume and delete actions to the dashboard.
+- Updated dashboard stats to reflect active monitors.
+- Verified monitor state changes and deletion work end-to-end.

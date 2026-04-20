@@ -13,7 +13,7 @@ type Monitor = {
 };
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
 export default function HomePage() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -22,7 +22,10 @@ export default function HomePage() {
   const [intervalSecs, setIntervalSecs] = useState("60");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingMonitorId, setPendingMonitorId] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  const activeMonitorCount = monitors.filter((monitor) => monitor.isActive).length;
 
   async function loadMonitors() {
     try {
@@ -88,6 +91,76 @@ export default function HomePage() {
     }
   }
 
+  async function handleToggleMonitor(id: string, nextIsActive: boolean) {
+    try {
+      setPendingMonitorId(id);
+      setError("");
+
+      const response = await fetch(`${API_BASE_URL}/monitors/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          isActive: nextIsActive
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error ?? "Failed to update monitor");
+      }
+
+      const updatedMonitor: Monitor = await response.json();
+
+      setMonitors((current) =>
+        current.map((monitor) =>
+          monitor.id === id ? updatedMonitor : monitor
+        )
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong while updating the monitor"
+      );
+    } finally {
+      setPendingMonitorId(null);
+    }
+  }
+
+  async function handleDeleteMonitor(id: string, monitorName: string) {
+    const confirmed = window.confirm(
+      `Delete monitor "${monitorName}"? This action cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setPendingMonitorId(id);
+      setError("");
+
+      const response = await fetch(`${API_BASE_URL}/monitors/${id}`, {
+        method: "DELETE"
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete monitor");
+      }
+
+      setMonitors((current) =>
+        current.filter((monitor) => monitor.id !== id)
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong while deleting the monitor"
+      );
+    } finally {
+      setPendingMonitorId(null);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#f5f7ff,_#eef2ff_40%,_#ffffff_75%)] px-6 py-10 text-slate-900">
       <div className="mx-auto max-w-6xl">
@@ -101,8 +174,8 @@ export default function HomePage() {
                 Monitor your endpoints from one clean dashboard.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600">
-                Create monitors, track uptime, and build your own self-hosted
-                status platform one feature at a time.
+                Create monitors, pause them when needed, and keep your dashboard
+                clean as the product grows.
               </p>
             </div>
           </div>
@@ -116,10 +189,10 @@ export default function HomePage() {
             </div>
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-sm">
               <div className="text-xs uppercase tracking-[0.18em] text-emerald-700">
-                API Status
+                Active Monitors
               </div>
               <div className="mt-2 text-2xl font-semibold text-emerald-800">
-                Online
+                {activeMonitorCount}
               </div>
             </div>
           </div>
@@ -130,8 +203,8 @@ export default function HomePage() {
             <div className="mb-6">
               <h2 className="text-2xl font-semibold">Add a monitor</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Start with one URL and a simple interval. We’ll build checks,
-                incidents, and alerts next.
+                Start with one URL and a simple interval. You can now pause or
+                delete monitors directly from the dashboard.
               </p>
             </div>
 
@@ -205,8 +278,7 @@ export default function HomePage() {
               <div>
                 <h2 className="text-2xl font-semibold">Saved monitors</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Your first production-style resource list. This will become the
-                  dashboard home.
+                  Pause what you don’t want to check and delete what you no longer need.
                 </p>
               </div>
 
@@ -229,34 +301,74 @@ export default function HomePage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {monitors.map((monitor) => (
-                  <article
-                    key={monitor.id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-semibold text-slate-900">
-                          {monitor.name}
-                        </h3>
-                        <p className="break-all text-sm text-slate-600">{monitor.url}</p>
+                {monitors.map((monitor) => {
+                  const isPending = pendingMonitorId === monitor.id;
+
+                  return (
+                    <article
+                      key={monitor.id}
+                      className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="space-y-2">
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            {monitor.name}
+                          </h3>
+                          <p className="break-all text-sm text-slate-600">
+                            {monitor.url}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${
+                            monitor.isActive
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {monitor.isActive ? "Active" : "Paused"}
+                        </span>
                       </div>
 
-                      <span className="inline-flex w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-emerald-700">
-                        {monitor.isActive ? "Active" : "Paused"}
-                      </span>
-                    </div>
+                      <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
+                        <span className="rounded-full bg-white px-3 py-1">
+                          Every {monitor.intervalSecs}s
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-1">
+                          Added {new Date(monitor.createdAt).toLocaleString()}
+                        </span>
+                      </div>
 
-                    <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
-                      <span className="rounded-full bg-white px-3 py-1">
-                        Every {monitor.intervalSecs}s
-                      </span>
-                      <span className="rounded-full bg-white px-3 py-1">
-                        Added {new Date(monitor.createdAt).toLocaleString()}
-                      </span>
-                    </div>
-                  </article>
-                ))}
+                      <div className="mt-5 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() =>
+                            handleToggleMonitor(monitor.id, !monitor.isActive)
+                          }
+                          className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isPending
+                            ? "Working..."
+                            : monitor.isActive
+                              ? "Pause monitor"
+                              : "Resume monitor"}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={isPending}
+                          onClick={() =>
+                            handleDeleteMonitor(monitor.id, monitor.name)
+                          }
+                          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isPending ? "Working..." : "Delete monitor"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             )}
           </section>
