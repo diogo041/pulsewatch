@@ -55,5 +55,46 @@ router.post("/", async (req, res) => {
   res.status(201).json(monitor);
 });
 
-export default router;
+router.patch("/:id", async (req, res) => {
+  const { id } = req.params;
+  const { isActive } = req.body;
 
+  if (typeof isActive !== "boolean") {
+    return res.status(400).json({ error: "isActive must be a boolean" });
+  }
+
+  const existingMonitor = await prisma.monitor.findUnique({
+    where: { id }
+  });
+
+  if (!existingMonitor) {
+    return res.status(404).json({ error: "monitor not found" });
+  }
+
+  const updatedMonitor = await prisma.monitor.update({
+    where: { id },
+    data: { isActive }
+  });
+
+  res.json(updatedMonitor);
+});
+
+router.delete("/:id", async (req, res) => {
+  const { id } = req.params;
+
+  const existingMonitor = await prisma.monitor.findUnique({
+    where: { id }
+  });
+
+  if (!existingMonitor) {
+    return res.status(404).json({ error: "monitor not found" });
+  }
+
+  await prisma.monitor.delete({
+    where: { id }
+  });
+
+  res.status(204).send();
+});
+
+export default router;
