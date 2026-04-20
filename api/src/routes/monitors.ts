@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { runMonitorCheck } from "../lib/monitor-checks";
 import { prisma } from "../lib/prisma";
 
 const router = Router();
@@ -7,6 +8,14 @@ router.get("/", async (_req, res) => {
   const monitors = await prisma.monitor.findMany({
     orderBy: {
       createdAt: "desc"
+    },
+    include: {
+      checkResults: {
+        orderBy: {
+          checkedAt: "desc"
+        },
+        take: 1
+      }
     }
   });
 
@@ -49,10 +58,34 @@ router.post("/", async (req, res) => {
       name: name.trim(),
       url: url.trim(),
       intervalSecs: parsedInterval
+    },
+    include: {
+      checkResults: {
+        orderBy: {
+          checkedAt: "desc"
+        },
+        take: 1
+      }
     }
   });
 
   res.status(201).json(monitor);
+});
+
+router.post("/:id/run", async (req, res) => {
+  const { id } = req.params;
+
+  const existingMonitor = await prisma.monitor.findUnique({
+    where: { id }
+  });
+
+  if (!existingMonitor) {
+    return res.status(404).json({ error: "monitor not found" });
+  }
+
+  const checkResult = await runMonitorCheck(id);
+
+  res.status(201).json(checkResult);
 });
 
 router.patch("/:id", async (req, res) => {
@@ -73,7 +106,15 @@ router.patch("/:id", async (req, res) => {
 
   const updatedMonitor = await prisma.monitor.update({
     where: { id },
-    data: { isActive }
+    data: { isActive },
+    include: {
+      checkResults: {
+        orderBy: {
+          checkedAt: "desc"
+        },
+        take: 1
+      }
+    }
   });
 
   res.json(updatedMonitor);
