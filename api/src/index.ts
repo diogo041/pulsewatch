@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import { startMonitorScheduler } from "./lib/monitor-scheduler";
 import { prisma } from "./lib/prisma";
 import monitorsRouter from "./routes/monitors";
 
@@ -18,6 +19,7 @@ app.get("/health", async (_req, res) => {
       status: "ok",
       service: "pulsewatch-api",
       database: "connected",
+      scheduler: "running",
       monitorCount
     });
   } catch {
@@ -32,5 +34,6 @@ app.get("/health", async (_req, res) => {
 app.use("/monitors", monitorsRouter);
 
 app.listen(port, () => {
+  startMonitorScheduler();
   console.log(`API listening on http://localhost:${port}`);
 });
