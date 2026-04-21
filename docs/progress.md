@@ -53,3 +53,11 @@
 - Returned the latest check result with monitor list responses.
 - Added a Run Check action to the dashboard.
 - Displayed the latest check status, code, response time, and timestamp in the UI.
+
+## Day 8
+
+- Added an automatic background scheduler for active monitors.
+- Ran due checks automatically based on each monitor interval.
+- Updated the API health response to show the scheduler is running.
+- Added dashboard auto-refresh so new check results appear without manual reload.
+- Verified paused monitors stop receiving automatic checks.

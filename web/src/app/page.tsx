@@ -38,9 +38,12 @@ export default function HomePage() {
 
   const activeMonitorCount = monitors.filter((monitor) => monitor.isActive).length;
 
-  async function loadMonitors() {
+  async function loadMonitors(showLoader = true) {
     try {
-      setLoading(true);
+      if (showLoader) {
+        setLoading(true);
+      }
+
       setError("");
 
       const response = await fetch(`${API_BASE_URL}/monitors`);
@@ -55,12 +58,22 @@ export default function HomePage() {
         err instanceof Error ? err.message : "Something went wrong while loading monitors"
       );
     } finally {
-      setLoading(false);
+      if (showLoader) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    loadMonitors();
+    void loadMonitors();
+
+    const intervalId = window.setInterval(() => {
+      void loadMonitors(false);
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -323,14 +336,17 @@ export default function HomePage() {
                 <p className="mt-2 text-sm leading-6 text-slate-600">
                   Run checks on demand and see the latest response right in the card.
                 </p>
+                <p className="mt-2 text-xs uppercase tracking-[0.15em] text-slate-400">
+                  Auto-refreshes every 15 seconds
+                </p>
               </div>
 
               <button
                 type="button"
-                onClick={loadMonitors}
+                onClick={() => void loadMonitors()}
                 className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
               >
-                Refresh
+                Refresh now
               </button>
             </div>
 
