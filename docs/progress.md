@@ -61,3 +61,9 @@
 - Updated the API health response to show the scheduler is running.
 - Added dashboard auto-refresh so new check results appear without manual reload.
 - Verified paused monitors stop receiving automatic checks.
+
+## Day 9
+- added endpoint to fetch recent check history for a monitor
+- showed recent check history in the dashboard
+- updated the dashboard state after manual checks and deletes
+

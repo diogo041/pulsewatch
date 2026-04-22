@@ -25,6 +25,18 @@ type Monitor = {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
+async function fetchMonitorHistory(monitorId: string) {
+  const response = await fetch(`${API_BASE_URL}/monitors/${monitorId}/checks`);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error ?? "Failed to load check history");
+  }
+
+  const data: CheckResult[] = await response.json();
+  return data;
+}
+
 export default function HomePage() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
   const [name, setName] = useState("");
@@ -34,6 +46,9 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [pendingMonitorId, setPendingMonitorId] = useState<string | null>(null);
   const [runningCheckId, setRunningCheckId] = useState<string | null>(null);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
+  const [historyByMonitor, setHistoryByMonitor] = useState<Record<string, CheckResult[]>>({});
   const [error, setError] = useState("");
 
   const activeMonitorCount = monitors.filter((monitor) => monitor.isActive).length;
@@ -53,6 +68,26 @@ export default function HomePage() {
 
       const data: Monitor[] = await response.json();
       setMonitors(data);
+
+      if (expandedHistoryId) {
+        const expandedMonitor = data.find((monitor) => monitor.id === expandedHistoryId);
+        const latestCheck = expandedMonitor?.checkResults[0];
+
+        if (latestCheck) {
+          setHistoryByMonitor((current) => {
+            const existingHistory = current[expandedHistoryId] ?? [];
+
+            if (existingHistory[0]?.id === latestCheck.id) {
+              return current;
+            }
+
+            return {
+              ...current,
+              [expandedHistoryId]: [latestCheck, ...existingHistory].slice(0, 10)
+            };
+          });
+        }
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Something went wrong while loading monitors"
@@ -60,6 +95,33 @@ export default function HomePage() {
     } finally {
       if (showLoader) {
         setLoading(false);
+      }
+    }
+  }
+
+  async function loadHistory(monitorId: string, showLoader = true) {
+    try {
+      if (showLoader) {
+        setHistoryLoadingId(monitorId);
+      }
+
+      setError("");
+
+      const data = await fetchMonitorHistory(monitorId);
+
+      setHistoryByMonitor((current) => ({
+        ...current,
+        [monitorId]: data
+      }));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while loading check history"
+      );
+    } finally {
+      if (showLoader) {
+        setHistoryLoadingId(null);
       }
     }
   }
@@ -74,7 +136,36 @@ export default function HomePage() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [expandedHistoryId]);
+
+  useEffect(() => {
+    if (!expandedHistoryId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void (async () => {
+        try {
+          const data = await fetchMonitorHistory(expandedHistoryId);
+
+          setHistoryByMonitor((current) => ({
+            ...current,
+            [expandedHistoryId]: data
+          }));
+        } catch (err) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Something went wrong while loading check history"
+          );
+        }
+      })();
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [expandedHistoryId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,7 +187,7 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to create monitor");
       }
 
@@ -131,7 +222,7 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to update monitor");
       }
 
@@ -176,6 +267,16 @@ export default function HomePage() {
       setMonitors((current) =>
         current.filter((monitor) => monitor.id !== id)
       );
+
+      setHistoryByMonitor((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+
+      if (expandedHistoryId === id) {
+        setExpandedHistoryId(null);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Something went wrong while deleting the monitor"
@@ -195,7 +296,7 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to run check");
       }
 
@@ -208,6 +309,11 @@ export default function HomePage() {
             : monitor
         )
       );
+
+      setHistoryByMonitor((current) => ({
+        ...current,
+        [id]: [newCheckResult, ...(current[id] ?? [])].slice(0, 10)
+      }));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Something went wrong while running the check"
@@ -215,6 +321,16 @@ export default function HomePage() {
     } finally {
       setRunningCheckId(null);
     }
+  }
+
+  async function handleToggleHistory(id: string) {
+    if (expandedHistoryId === id) {
+      setExpandedHistoryId(null);
+      return;
+    }
+
+    setExpandedHistoryId(id);
+    await loadHistory(id, !historyByMonitor[id]);
   }
 
   return (
@@ -230,8 +346,8 @@ export default function HomePage() {
                 Monitor your endpoints from one clean dashboard.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600">
-                Create monitors, run live checks, and see the latest result directly
-                from the dashboard.
+                Create monitors, run live checks, and explore recent check history
+                directly from the dashboard.
               </p>
             </div>
           </div>
@@ -334,7 +450,8 @@ export default function HomePage() {
               <div>
                 <h2 className="text-2xl font-semibold">Saved monitors</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Run checks on demand and see the latest response right in the card.
+                  Run checks on demand, inspect recent history, and keep track of
+                  your latest responses in one place.
                 </p>
                 <p className="mt-2 text-xs uppercase tracking-[0.15em] text-slate-400">
                   Auto-refreshes every 15 seconds
@@ -364,6 +481,8 @@ export default function HomePage() {
                   const isPending = pendingMonitorId === monitor.id;
                   const isRunningCheck = runningCheckId === monitor.id;
                   const latestCheck = monitor.checkResults[0];
+                  const history = historyByMonitor[monitor.id] ?? [];
+                  const isHistoryOpen = expandedHistoryId === monitor.id;
 
                   return (
                     <article
@@ -434,7 +553,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           disabled={isRunningCheck}
-                          onClick={() => handleRunCheck(monitor.id)}
+                          onClick={() => void handleRunCheck(monitor.id)}
                           className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isRunningCheck ? "Running check..." : "Run check"}
@@ -442,9 +561,17 @@ export default function HomePage() {
 
                         <button
                           type="button"
+                          onClick={() => void handleToggleHistory(monitor.id)}
+                          className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-100"
+                        >
+                          {isHistoryOpen ? "Hide history" : "Show history"}
+                        </button>
+
+                        <button
+                          type="button"
                           disabled={isPending}
                           onClick={() =>
-                            handleToggleMonitor(monitor.id, !monitor.isActive)
+                            void handleToggleMonitor(monitor.id, !monitor.isActive)
                           }
                           className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
@@ -459,13 +586,58 @@ export default function HomePage() {
                           type="button"
                           disabled={isPending}
                           onClick={() =>
-                            handleDeleteMonitor(monitor.id, monitor.name)
+                            void handleDeleteMonitor(monitor.id, monitor.name)
                           }
                           className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {isPending ? "Working..." : "Delete monitor"}
                         </button>
                       </div>
+
+                      {isHistoryOpen ? (
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+                            Recent checks
+                          </div>
+
+                          {historyLoadingId === monitor.id ? (
+                            <div className="text-sm text-slate-500">Loading history...</div>
+                          ) : history.length === 0 ? (
+                            <div className="text-sm text-slate-500">No check history yet.</div>
+                          ) : (
+                            <div className="space-y-3">
+                              {history.map((check) => (
+                                <div
+                                  key={check.id}
+                                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                                >
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <div
+                                      className={`text-sm font-semibold ${
+                                        check.status === "UP"
+                                          ? "text-emerald-700"
+                                          : "text-rose-700"
+                                      }`}
+                                    >
+                                      {check.status}
+                                    </div>
+
+                                    <div className="text-sm text-slate-600">
+                                      {check.statusCode
+                                        ? `HTTP ${check.statusCode}`
+                                        : check.errorMessage ?? "No status code"}
+                                      {" · "}
+                                      {check.responseTimeMs ?? "N/A"} ms
+                                      {" · "}
+                                      {new Date(check.checkedAt).toLocaleString()}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
                     </article>
                   );
                 })}
