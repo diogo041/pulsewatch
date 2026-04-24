@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import { startMonitorScheduler } from "./lib/monitor-scheduler";
 import { prisma } from "./lib/prisma";
+import incidentsRouter from "./routes/incidents";
 import monitorsRouter from "./routes/monitors";
 
 const app = express();
@@ -13,14 +14,22 @@ app.use(express.json());
 
 app.get("/health", async (_req, res) => {
   try {
-    const monitorCount = await prisma.monitor.count();
+    const [monitorCount, openIncidentCount] = await Promise.all([
+      prisma.monitor.count(),
+      prisma.incident.count({
+        where: {
+          status: "OPEN"
+        }
+      })
+    ]);
 
     res.json({
       status: "ok",
       service: "pulsewatch-api",
       database: "connected",
       scheduler: "running",
-      monitorCount
+      monitorCount,
+      openIncidentCount
     });
   } catch {
     res.status(500).json({
@@ -32,6 +41,7 @@ app.get("/health", async (_req, res) => {
 });
 
 app.use("/monitors", monitorsRouter);
+app.use("/incidents", incidentsRouter);
 
 app.listen(port, () => {
   startMonitorScheduler();
