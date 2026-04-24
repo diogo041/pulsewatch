@@ -67,3 +67,9 @@
 - showed recent check history in the dashboard
 - updated the dashboard state after manual checks and deletes
 
+## Day 10
+- added incident tracking to the monitoring workflow
+- opened incidents automatically for failing monitors
+- resolved incidents automatically when monitors recovered
+- displayed incident history in the dashboard
+

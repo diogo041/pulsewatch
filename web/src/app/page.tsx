@@ -22,6 +22,22 @@ type Monitor = {
   checkResults: CheckResult[];
 };
 
+type Incident = {
+  id: string;
+  status: "OPEN" | "RESOLVED";
+  startedAt: string;
+  resolvedAt: string | null;
+  lastStatusCode: number | null;
+  lastErrorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  monitor: {
+    id: string;
+    name: string;
+    url: string;
+  };
+};
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4001";
 
@@ -39,10 +55,12 @@ async function fetchMonitorHistory(monitorId: string) {
 
 export default function HomePage() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [intervalSecs, setIntervalSecs] = useState("60");
   const [loading, setLoading] = useState(true);
+  const [incidentsLoading, setIncidentsLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [pendingMonitorId, setPendingMonitorId] = useState<string | null>(null);
   const [runningCheckId, setRunningCheckId] = useState<string | null>(null);
@@ -52,6 +70,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   const activeMonitorCount = monitors.filter((monitor) => monitor.isActive).length;
+  const openIncidentCount = incidents.filter((incident) => incident.status === "OPEN").length;
 
   async function loadMonitors(showLoader = true) {
     try {
@@ -99,6 +118,32 @@ export default function HomePage() {
     }
   }
 
+  async function loadIncidents(showLoader = true) {
+    try {
+      if (showLoader) {
+        setIncidentsLoading(true);
+      }
+
+      setError("");
+
+      const response = await fetch(`${API_BASE_URL}/incidents`);
+      if (!response.ok) {
+        throw new Error("Failed to load incidents");
+      }
+
+      const data: Incident[] = await response.json();
+      setIncidents(data);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Something went wrong while loading incidents"
+      );
+    } finally {
+      if (showLoader) {
+        setIncidentsLoading(false);
+      }
+    }
+  }
+
   async function loadHistory(monitorId: string, showLoader = true) {
     try {
       if (showLoader) {
@@ -128,9 +173,11 @@ export default function HomePage() {
 
   useEffect(() => {
     void loadMonitors();
+    void loadIncidents();
 
     const intervalId = window.setInterval(() => {
       void loadMonitors(false);
+      void loadIncidents(false);
     }, 15000);
 
     return () => {
@@ -143,23 +190,10 @@ export default function HomePage() {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
-      void (async () => {
-        try {
-          const data = await fetchMonitorHistory(expandedHistoryId);
+    void loadHistory(expandedHistoryId, !(expandedHistoryId in historyByMonitor));
 
-          setHistoryByMonitor((current) => ({
-            ...current,
-            [expandedHistoryId]: data
-          }));
-        } catch (err) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Something went wrong while loading check history"
-          );
-        }
-      })();
+    const intervalId = window.setInterval(() => {
+      void loadHistory(expandedHistoryId, false);
     }, 15000);
 
     return () => {
@@ -268,6 +302,10 @@ export default function HomePage() {
         current.filter((monitor) => monitor.id !== id)
       );
 
+      setIncidents((current) =>
+        current.filter((incident) => incident.monitor.id !== id)
+      );
+
       setHistoryByMonitor((current) => {
         const next = { ...current };
         delete next[id];
@@ -314,6 +352,8 @@ export default function HomePage() {
         ...current,
         [id]: [newCheckResult, ...(current[id] ?? [])].slice(0, 10)
       }));
+
+      void loadIncidents(false);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Something went wrong while running the check"
@@ -346,13 +386,13 @@ export default function HomePage() {
                 Monitor your endpoints from one clean dashboard.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-slate-600">
-                Create monitors, run live checks, and explore recent check history
-                directly from the dashboard.
+                Create monitors, run live checks, inspect recent history, and
+                track incidents as services go down or recover.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid w-full gap-3 sm:grid-cols-3 md:w-auto">
             <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 shadow-sm">
               <div className="text-xs uppercase tracking-[0.18em] text-slate-500">
                 Total Monitors
@@ -367,6 +407,14 @@ export default function HomePage() {
                 {activeMonitorCount}
               </div>
             </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-sm">
+              <div className="text-xs uppercase tracking-[0.18em] text-rose-700">
+                Open Incidents
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-rose-800">
+                {openIncidentCount}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -375,8 +423,8 @@ export default function HomePage() {
             <div className="mb-6">
               <h2 className="text-2xl font-semibold">Add a monitor</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Start with one URL and a simple interval. You can now run checks
-                and store the latest result.
+                Start with one URL and a simple interval. PulseWatch will track
+                the latest result and open incidents when checks fail.
               </p>
             </div>
 
@@ -445,205 +493,281 @@ export default function HomePage() {
             </form>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-2xl font-semibold">Saved monitors</h2>
+          <div className="space-y-6">
+            <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+              <div className="mb-6 flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-semibold">Saved monitors</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Run checks on demand, inspect recent history, and keep track of
+                    your latest responses in one place.
+                  </p>
+                  <p className="mt-2 text-xs uppercase tracking-[0.15em] text-slate-400">
+                    Auto-refreshes every 15 seconds
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void loadMonitors();
+                    void loadIncidents();
+                  }}
+                  className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                >
+                  Refresh now
+                </button>
+              </div>
+
+              {loading ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
+                  Loading monitors...
+                </div>
+              ) : monitors.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
+                  No monitors yet. Add your first one from the form.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {monitors.map((monitor) => {
+                    const isPending = pendingMonitorId === monitor.id;
+                    const isRunningCheck = runningCheckId === monitor.id;
+                    const latestCheck = monitor.checkResults[0];
+                    const history = historyByMonitor[monitor.id] ?? [];
+                    const isHistoryOpen = expandedHistoryId === monitor.id;
+
+                    return (
+                      <article
+                        key={monitor.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5"
+                      >
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="space-y-2">
+                            <h3 className="text-lg font-semibold text-slate-900">
+                              {monitor.name}
+                            </h3>
+                            <p className="break-all text-sm text-slate-600">
+                              {monitor.url}
+                            </p>
+                          </div>
+
+                          <span
+                            className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${
+                              monitor.isActive
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {monitor.isActive ? "Active" : "Paused"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
+                          <span className="rounded-full bg-white px-3 py-1">
+                            Every {monitor.intervalSecs}s
+                          </span>
+                          <span className="rounded-full bg-white px-3 py-1">
+                            Added {new Date(monitor.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                          {latestCheck ? (
+                            <div className="space-y-1">
+                              <div className="font-medium text-slate-900">
+                                Last check:{" "}
+                                <span
+                                  className={
+                                    latestCheck.status === "UP"
+                                      ? "text-emerald-700"
+                                      : "text-rose-700"
+                                  }
+                                >
+                                  {latestCheck.status}
+                                </span>
+                              </div>
+                              <div>
+                                {latestCheck.statusCode
+                                  ? `HTTP ${latestCheck.statusCode}`
+                                  : latestCheck.errorMessage ?? "No status code"}
+                                {" · "}
+                                {latestCheck.responseTimeMs ?? "N/A"} ms
+                                {" · "}
+                                {new Date(latestCheck.checkedAt).toLocaleString()}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>No checks recorded yet. Run the first one now.</div>
+                          )}
+                        </div>
+
+                        <div className="mt-5 flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            disabled={isRunningCheck}
+                            onClick={() => void handleRunCheck(monitor.id)}
+                            className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isRunningCheck ? "Running check..." : "Run check"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleHistory(monitor.id)}
+                            className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-100"
+                          >
+                            {isHistoryOpen ? "Hide history" : "Show history"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() =>
+                              void handleToggleMonitor(monitor.id, !monitor.isActive)
+                            }
+                            className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isPending
+                              ? "Working..."
+                              : monitor.isActive
+                                ? "Pause monitor"
+                                : "Resume monitor"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() =>
+                              void handleDeleteMonitor(monitor.id, monitor.name)
+                            }
+                            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isPending ? "Working..." : "Delete monitor"}
+                          </button>
+                        </div>
+
+                        {isHistoryOpen ? (
+                          <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <div className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+                              Recent checks
+                            </div>
+
+                            {historyLoadingId === monitor.id ? (
+                              <div className="text-sm text-slate-500">Loading history...</div>
+                            ) : history.length === 0 ? (
+                              <div className="text-sm text-slate-500">No check history yet.</div>
+                            ) : (
+                              <div className="space-y-3">
+                                {history.map((check) => (
+                                  <div
+                                    key={check.id}
+                                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                                  >
+                                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                      <div
+                                        className={`text-sm font-semibold ${
+                                          check.status === "UP"
+                                            ? "text-emerald-700"
+                                            : "text-rose-700"
+                                        }`}
+                                      >
+                                        {check.status}
+                                      </div>
+
+                                      <div className="text-sm text-slate-600">
+                                        {check.statusCode
+                                          ? `HTTP ${check.statusCode}`
+                                          : check.errorMessage ?? "No status code"}
+                                        {" · "}
+                                        {check.responseTimeMs ?? "N/A"} ms
+                                        {" · "}
+                                        {new Date(check.checkedAt).toLocaleString()}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
+              <div className="mb-6">
+                <h2 className="text-2xl font-semibold">Recent incidents</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Run checks on demand, inspect recent history, and keep track of
-                  your latest responses in one place.
-                </p>
-                <p className="mt-2 text-xs uppercase tracking-[0.15em] text-slate-400">
-                  Auto-refreshes every 15 seconds
+                  Failed checks open incidents automatically. Recovery checks close
+                  them so you can see what broke and when it recovered.
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => void loadMonitors()}
-                className="rounded-2xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-              >
-                Refresh now
-              </button>
-            </div>
-
-            {loading ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
-                Loading monitors...
-              </div>
-            ) : monitors.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
-                No monitors yet. Add your first one from the form.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {monitors.map((monitor) => {
-                  const isPending = pendingMonitorId === monitor.id;
-                  const isRunningCheck = runningCheckId === monitor.id;
-                  const latestCheck = monitor.checkResults[0];
-                  const history = historyByMonitor[monitor.id] ?? [];
-                  const isHistoryOpen = expandedHistoryId === monitor.id;
-
-                  return (
+              {incidentsLoading ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
+                  Loading incidents...
+                </div>
+              ) : incidents.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center text-slate-500">
+                  No incidents yet. A failing monitor will create one automatically.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {incidents.map((incident) => (
                     <article
-                      key={monitor.id}
+                      key={incident.id}
                       className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="space-y-2">
                           <h3 className="text-lg font-semibold text-slate-900">
-                            {monitor.name}
+                            {incident.monitor.name}
                           </h3>
                           <p className="break-all text-sm text-slate-600">
-                            {monitor.url}
+                            {incident.monitor.url}
                           </p>
                         </div>
 
                         <span
                           className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] ${
-                            monitor.isActive
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
+                            incident.status === "OPEN"
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-emerald-100 text-emerald-700"
                           }`}
                         >
-                          {monitor.isActive ? "Active" : "Paused"}
+                          {incident.status}
                         </span>
                       </div>
 
                       <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600">
                         <span className="rounded-full bg-white px-3 py-1">
-                          Every {monitor.intervalSecs}s
+                          Started {new Date(incident.startedAt).toLocaleString()}
                         </span>
                         <span className="rounded-full bg-white px-3 py-1">
-                          Added {new Date(monitor.createdAt).toLocaleString()}
+                          {incident.resolvedAt
+                            ? `Resolved ${new Date(incident.resolvedAt).toLocaleString()}`
+                            : "Awaiting recovery"}
                         </span>
                       </div>
 
                       <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                        {latestCheck ? (
-                          <div className="space-y-1">
-                            <div className="font-medium text-slate-900">
-                              Last check:{" "}
-                              <span
-                                className={
-                                  latestCheck.status === "UP"
-                                    ? "text-emerald-700"
-                                    : "text-rose-700"
-                                }
-                              >
-                                {latestCheck.status}
-                              </span>
-                            </div>
-                            <div>
-                              {latestCheck.statusCode
-                                ? `HTTP ${latestCheck.statusCode}`
-                                : latestCheck.errorMessage ?? "No status code"}
-                              {" · "}
-                              {latestCheck.responseTimeMs ?? "N/A"} ms
-                              {" · "}
-                              {new Date(latestCheck.checkedAt).toLocaleString()}
-                            </div>
-                          </div>
+                        {incident.lastStatusCode ? (
+                          <div>Last status code: HTTP {incident.lastStatusCode}</div>
+                        ) : incident.lastErrorMessage ? (
+                          <div>Last error: {incident.lastErrorMessage}</div>
                         ) : (
-                          <div>No checks recorded yet. Run the first one now.</div>
+                          <div>No failure details recorded yet.</div>
                         )}
                       </div>
-
-                      <div className="mt-5 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          disabled={isRunningCheck}
-                          onClick={() => void handleRunCheck(monitor.id)}
-                          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isRunningCheck ? "Running check..." : "Run check"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => void handleToggleHistory(monitor.id)}
-                          className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 transition hover:bg-violet-100"
-                        >
-                          {isHistoryOpen ? "Hide history" : "Show history"}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() =>
-                            void handleToggleMonitor(monitor.id, !monitor.isActive)
-                          }
-                          className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isPending
-                            ? "Working..."
-                            : monitor.isActive
-                              ? "Pause monitor"
-                              : "Resume monitor"}
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() =>
-                            void handleDeleteMonitor(monitor.id, monitor.name)
-                          }
-                          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {isPending ? "Working..." : "Delete monitor"}
-                        </button>
-                      </div>
-
-                      {isHistoryOpen ? (
-                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
-                            Recent checks
-                          </div>
-
-                          {historyLoadingId === monitor.id ? (
-                            <div className="text-sm text-slate-500">Loading history...</div>
-                          ) : history.length === 0 ? (
-                            <div className="text-sm text-slate-500">No check history yet.</div>
-                          ) : (
-                            <div className="space-y-3">
-                              {history.map((check) => (
-                                <div
-                                  key={check.id}
-                                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-                                >
-                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <div
-                                      className={`text-sm font-semibold ${
-                                        check.status === "UP"
-                                          ? "text-emerald-700"
-                                          : "text-rose-700"
-                                      }`}
-                                    >
-                                      {check.status}
-                                    </div>
-
-                                    <div className="text-sm text-slate-600">
-                                      {check.statusCode
-                                        ? `HTTP ${check.statusCode}`
-                                        : check.errorMessage ?? "No status code"}
-                                      {" · "}
-                                      {check.responseTimeMs ?? "N/A"} ms
-                                      {" · "}
-                                      {new Date(check.checkedAt).toLocaleString()}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
                     </article>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </main>

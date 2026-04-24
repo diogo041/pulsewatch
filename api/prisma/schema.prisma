@@ -21,7 +21,7 @@ model Monitor {
   id           String        @id @default(cuid())
   name         String
   url          String
-  intervalSecs Int           @default(60)
+  intervalSecs Int
   isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -32,24 +32,28 @@ model Monitor {
 model CheckResult {
   id             String      @id @default(cuid())
   monitorId      String
+  monitor        Monitor     @relation(fields: [monitorId], references: [id], onDelete: Cascade)
   status         CheckStatus
   statusCode     Int?
   responseTimeMs Int?
   errorMessage   String?
   checkedAt      DateTime    @default(now())
-  monitor        Monitor     @relation(fields: [monitorId], references: [id], onDelete: Cascade)
 
   @@index([monitorId, checkedAt])
 }
 
 model Incident {
-  id        String         @id @default(cuid())
-  monitorId String
-  status    IncidentStatus @default(OPEN)
-  reason    String?
-  startedAt DateTime       @default(now())
-  endedAt   DateTime?
-  monitor   Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  id               String         @id @default(cuid())
+  status           IncidentStatus
+  startedAt        DateTime
+  resolvedAt       DateTime?
+  lastStatusCode   Int?
+  lastErrorMessage String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  monitorId        String
+  monitor          Monitor        @relation(fields: [monitorId], references: [id], onDelete: Cascade)
 
-  @@index([monitorId, startedAt])
+  @@index([monitorId, status])
+  @@index([startedAt])
 }
